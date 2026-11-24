@@ -1,0 +1,752 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // PRIMITIVES & IDENTITY HELPERS
+    // =========================================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'jagtaptanishka0604@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidLongId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 200 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidStringList(val, maxItems) {
+      return val is list && val.size() <= maxItems && (val.size() == 0 || (val[0] is string && val[0].size() <= 160));
+    }
+
+    // =========================================================================
+    // VALIDATION BLUEPRINTS (ANTI-UPDATE-GAP)
+    // =========================================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role', 'status', 'onboardingComplete', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'name', 'email', 'role', 'status', 'onboardingComplete', 'photoUrl', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && isValidString(data.name, 1, 120)
+        && isValidString(data.email, 3, 254)
+        && data.role in ['brand', 'creator', 'admin']
+        && data.status in ['active', 'suspended']
+        && data.onboardingComplete is bool
+        && (!('photoUrl' in data) || isValidString(data.photoUrl, 0, 500))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'createdAt'])
+        && isValidId(data.uid)
+        && isValidString(data.email, 3, 254)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidBrandProfile(data) {
+      return data.keys().hasAll(['ownerId', 'brandName', 'description', 'industry', 'location', 'verified', 'visibility', 'isDemo', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'brandName', 'description', 'industry', 'website', 'logoUrl', 'location', 'contactName', 'verified', 'visibility', 'isDemo', 'createdAt', 'updatedAt'])
+        && isValidId(data.ownerId)
+        && isValidString(data.brandName, 1, 120)
+        && isValidString(data.description, 0, 2000)
+        && isValidString(data.industry, 0, 80)
+        && (!('website' in data) || isValidString(data.website, 0, 300))
+        && (!('logoUrl' in data) || isValidString(data.logoUrl, 0, 500))
+        && isValidString(data.location, 0, 120)
+        && (!('contactName' in data) || isValidString(data.contactName, 0, 120))
+        && data.verified is bool
+        && data.visibility in ['public', 'private']
+        && data.isDemo is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCreatorProfile(data) {
+      return data.keys().hasAll(['ownerId', 'fullName', 'username', 'bio', 'location', 'niche', 'skills', 'platforms', 'followersCount', 'engagementRate', 'collaborationRate', 'verified', 'visibility', 'isDemo', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'fullName', 'username', 'photoUrl', 'bio', 'location', 'niche', 'skills', 'platforms', 'followersCount', 'engagementRate', 'collaborationRate', 'preferences', 'verified', 'visibility', 'isDemo', 'createdAt', 'updatedAt'])
+        && isValidId(data.ownerId)
+        && isValidString(data.fullName, 1, 120)
+        && isValidString(data.username, 2, 50)
+        && data.username.matches('^[a-zA-Z0-9_\\.\\-]+$')
+        && (!('photoUrl' in data) || isValidString(data.photoUrl, 0, 500))
+        && isValidString(data.bio, 0, 1500)
+        && isValidString(data.location, 0, 120)
+        && isValidString(data.niche, 0, 80)
+        && isValidStringList(data.skills, 10)
+        && isValidStringList(data.platforms, 8)
+        && data.followersCount is number && data.followersCount >= 0 && data.followersCount <= 500000000
+        && data.engagementRate is number && data.engagementRate >= 0 && data.engagementRate <= 100
+        && data.collaborationRate is number && data.collaborationRate >= 0 && data.collaborationRate <= 10000000
+        && (!('preferences' in data) || isValidString(data.preferences, 0, 500))
+        && data.verified is bool
+        && data.visibility in ['public', 'private']
+        && data.isDemo is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSocialAccount(data) {
+      return data.keys().hasAll(['ownerId', 'creatorId', 'platform', 'handle', 'url', 'followers', 'engagementRate', 'visibility', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'creatorId', 'platform', 'handle', 'url', 'followers', 'engagementRate', 'visibility', 'createdAt', 'updatedAt'])
+        && isValidId(data.ownerId)
+        && isValidId(data.creatorId)
+        && isValidString(data.platform, 1, 40)
+        && isValidString(data.handle, 1, 80)
+        && isValidString(data.url, 1, 400)
+        && data.followers is number && data.followers >= 0 && data.followers <= 500000000
+        && data.engagementRate is number && data.engagementRate >= 0 && data.engagementRate <= 100
+        && data.visibility in ['public', 'private']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPortfolioItem(data) {
+      return data.keys().hasAll(['ownerId', 'creatorId', 'title', 'description', 'mediaType', 'mediaUrl', 'category', 'visibility', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'creatorId', 'title', 'description', 'mediaType', 'mediaUrl', 'category', 'visibility', 'createdAt', 'updatedAt'])
+        && isValidId(data.ownerId)
+        && isValidId(data.creatorId)
+        && isValidString(data.title, 1, 140)
+        && isValidString(data.description, 0, 1200)
+        && data.mediaType in ['image', 'video']
+        && isValidString(data.mediaUrl, 1, 600)
+        && isValidString(data.category, 1, 60)
+        && data.visibility in ['public', 'private']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCampaign(data) {
+      return data.keys().hasAll(['brandId', 'brandName', 'title', 'description', 'objectives', 'targetAudience', 'niche', 'platforms', 'budget', 'startDate', 'endDate', 'deliverables', 'instructions', 'status', 'allowApplications', 'progress', 'visibility', 'isDemo', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['brandId', 'brandName', 'brandLogoUrl', 'title', 'description', 'objectives', 'targetAudience', 'niche', 'platforms', 'budget', 'startDate', 'endDate', 'deliverables', 'instructions', 'coverImageUrl', 'status', 'allowApplications', 'progress', 'visibility', 'isDemo', 'createdAt', 'updatedAt'])
+        && isValidId(data.brandId)
+        && isValidString(data.brandName, 1, 120)
+        && (!('brandLogoUrl' in data) || isValidString(data.brandLogoUrl, 0, 500))
+        && isValidString(data.title, 2, 160)
+        && isValidString(data.description, 0, 3000)
+        && isValidString(data.objectives, 0, 1500)
+        && isValidString(data.targetAudience, 0, 500)
+        && isValidString(data.niche, 1, 80)
+        && isValidStringList(data.platforms, 8)
+        && data.budget is number && data.budget >= 0 && data.budget <= 100000000
+        && isValidString(data.startDate, 0, 30)
+        && isValidString(data.endDate, 0, 30)
+        && isValidStringList(data.deliverables, 15)
+        && isValidString(data.instructions, 0, 2500)
+        && (!('coverImageUrl' in data) || isValidString(data.coverImageUrl, 0, 500))
+        && data.status in ['draft', 'open', 'active', 'completed', 'cancelled']
+        && data.allowApplications is bool
+        && data.progress is number && data.progress >= 0 && data.progress <= 100
+        && data.visibility in ['public', 'private']
+        && data.isDemo is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidContact(data) {
+      return data.keys().hasAll(['brandId', 'creatorId', 'creatorName', 'creatorUsername', 'creatorNiche', 'folder', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['brandId', 'creatorId', 'creatorName', 'creatorUsername', 'creatorNiche', 'creatorPhotoUrl', 'folder', 'notes', 'createdAt', 'updatedAt'])
+        && isValidId(data.brandId)
+        && isValidId(data.creatorId)
+        && isValidString(data.creatorName, 1, 120)
+        && isValidString(data.creatorUsername, 1, 60)
+        && isValidString(data.creatorNiche, 0, 80)
+        && (!('creatorPhotoUrl' in data) || isValidString(data.creatorPhotoUrl, 0, 500))
+        && isValidString(data.folder, 1, 60)
+        && isValidString(data.notes, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCollaborationRequest(data) {
+      return data.keys().hasAll(['campaignId', 'campaignTitle', 'brandId', 'brandName', 'creatorId', 'creatorName', 'initiatorRole', 'proposedBudget', 'message', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['campaignId', 'campaignTitle', 'brandId', 'brandName', 'creatorId', 'creatorName', 'initiatorRole', 'proposedBudget', 'message', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.campaignId)
+        && isValidString(data.campaignTitle, 1, 160)
+        && isValidId(data.brandId)
+        && isValidString(data.brandName, 1, 120)
+        && isValidId(data.creatorId)
+        && isValidString(data.creatorName, 1, 120)
+        && data.initiatorRole in ['brand', 'creator']
+        && data.proposedBudget is number && data.proposedBudget >= 0 && data.proposedBudget <= 100000000
+        && isValidString(data.message, 0, 1500)
+        && data.status in ['pending', 'accepted', 'rejected', 'withdrawn']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCollaboration(data) {
+      return data.keys().hasAll(['requestId', 'campaignId', 'campaignTitle', 'brandId', 'brandName', 'creatorId', 'creatorName', 'budget', 'deadline', 'deliverablesSummary', 'progress', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['requestId', 'campaignId', 'campaignTitle', 'brandId', 'brandName', 'creatorId', 'creatorName', 'budget', 'deadline', 'deliverablesSummary', 'progress', 'status', 'createdAt', 'updatedAt'])
+        && isValidLongId(data.requestId)
+        && isValidId(data.campaignId)
+        && isValidString(data.campaignTitle, 1, 160)
+        && isValidId(data.brandId)
+        && isValidString(data.brandName, 1, 120)
+        && isValidId(data.creatorId)
+        && isValidString(data.creatorName, 1, 120)
+        && data.budget is number && data.budget >= 0 && data.budget <= 100000000
+        && isValidString(data.deadline, 0, 30)
+        && isValidString(data.deliverablesSummary, 0, 1000)
+        && data.progress is number && data.progress >= 0 && data.progress <= 100
+        && data.status in ['active', 'in_review', 'completed', 'cancelled']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDeliverable(data) {
+      return data.keys().hasAll(['collaborationId', 'campaignId', 'brandId', 'creatorId', 'title', 'description', 'status', 'feedback', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['collaborationId', 'campaignId', 'brandId', 'creatorId', 'title', 'description', 'fileUrl', 'linkUrl', 'status', 'feedback', 'createdAt', 'updatedAt'])
+        && isValidId(data.collaborationId)
+        && isValidId(data.campaignId)
+        && isValidId(data.brandId)
+        && isValidId(data.creatorId)
+        && isValidString(data.title, 1, 160)
+        && isValidString(data.description, 0, 1500)
+        && (!('fileUrl' in data) || isValidString(data.fileUrl, 0, 600))
+        && (!('linkUrl' in data) || isValidString(data.linkUrl, 0, 600))
+        && data.status in ['submitted', 'approved', 'revision_requested']
+        && isValidString(data.feedback, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll(['brandId', 'brandName', 'creatorId', 'creatorName', 'lastMessage', 'lastSenderId', 'unreadByBrand', 'unreadByCreator', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['brandId', 'brandName', 'creatorId', 'creatorName', 'campaignId', 'campaignTitle', 'lastMessage', 'lastSenderId', 'unreadByBrand', 'unreadByCreator', 'createdAt', 'updatedAt'])
+        && isValidId(data.brandId)
+        && isValidString(data.brandName, 1, 120)
+        && isValidId(data.creatorId)
+        && isValidString(data.creatorName, 1, 120)
+        && (!('campaignId' in data) || isValidString(data.campaignId, 0, 128))
+        && (!('campaignTitle' in data) || isValidString(data.campaignTitle, 0, 160))
+        && isValidString(data.lastMessage, 0, 500)
+        && isValidString(data.lastSenderId, 0, 128)
+        && data.unreadByBrand is number && data.unreadByBrand >= 0 && data.unreadByBrand <= 10000
+        && data.unreadByCreator is number && data.unreadByCreator >= 0 && data.unreadByCreator <= 10000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['conversationId', 'brandId', 'creatorId', 'senderId', 'senderName', 'body', 'createdAt'])
+        && data.keys().hasOnly(['conversationId', 'brandId', 'creatorId', 'senderId', 'senderName', 'body', 'createdAt'])
+        && isValidLongId(data.conversationId)
+        && isValidId(data.brandId)
+        && isValidId(data.creatorId)
+        && isValidId(data.senderId)
+        && isValidString(data.senderName, 1, 120)
+        && isValidString(data.body, 1, 2000)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['recipientId', 'senderId', 'type', 'title', 'body', 'read', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['recipientId', 'senderId', 'type', 'title', 'body', 'linkTab', 'referenceId', 'read', 'createdAt', 'updatedAt'])
+        && isValidId(data.recipientId)
+        && isValidId(data.senderId)
+        && data.type in ['invitation', 'invitation_accepted', 'invitation_rejected', 'message', 'campaign_published', 'campaign_updated', 'deliverable_submitted', 'deadline', 'announcement']
+        && isValidString(data.title, 1, 160)
+        && isValidString(data.body, 1, 500)
+        && (!('linkTab' in data) || isValidString(data.linkTab, 0, 60))
+        && (!('referenceId' in data) || isValidString(data.referenceId, 0, 128))
+        && data.read is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidReport(data) {
+      return data.keys().hasAll(['reporterId', 'targetType', 'targetId', 'targetName', 'reason', 'description', 'status', 'resolutionNote', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['reporterId', 'targetType', 'targetId', 'targetName', 'reason', 'description', 'status', 'resolutionNote', 'createdAt', 'updatedAt'])
+        && isValidId(data.reporterId)
+        && data.targetType in ['user', 'campaign']
+        && isValidId(data.targetId)
+        && isValidString(data.targetName, 1, 160)
+        && isValidString(data.reason, 1, 120)
+        && isValidString(data.description, 5, 1500)
+        && data.status in ['pending', 'reviewed', 'resolved', 'dismissed']
+        && isValidString(data.resolutionNote, 0, 1000)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminAction(data) {
+      return data.keys().hasAll(['adminId', 'adminEmail', 'actionType', 'targetType', 'targetId', 'details', 'createdAt'])
+        && data.keys().hasOnly(['adminId', 'adminEmail', 'actionType', 'targetType', 'targetId', 'details', 'createdAt'])
+        && isValidId(data.adminId)
+        && isValidString(data.adminEmail, 3, 254)
+        && isValidString(data.actionType, 1, 80)
+        && data.targetType in ['user', 'campaign', 'report', 'system']
+        && isValidId(data.targetId)
+        && isValidString(data.details, 1, 1000)
+        && data.createdAt is timestamp;
+    }
+
+    // =========================================================================
+    // COLLECTION RULES
+    // =========================================================================
+
+    // 1. Users (PII isolated to owner or admin)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isVerified() && isValidId(userId) && isValidUser(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(userId) && incoming().status == 'active' && (incoming().role in ['brand', 'creator'] || isBootstrappedAdmin()))
+          || isAdmin()
+        );
+      allow update: if isVerified() && isValidId(userId) && isValidUser(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(userId)
+            && incoming().role == existing().role
+            && incoming().status == existing().status
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'onboardingComplete', 'photoUrl', 'updatedAt']))
+          || (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'status', 'onboardingComplete', 'photoUrl', 'updatedAt']))
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 2. Admins (Trusted registry)
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isVerified() && isValidId(userId) && isValidAdminRecord(incoming())
+        && incoming().uid == userId
+        && incoming().createdAt == request.time
+        && isAdmin();
+      allow update: if false;
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // 3. Brand Profiles
+    match /brandProfiles/{brandId} {
+      allow get: if isValidId(brandId) && (existing().visibility == 'public' || isOwner(existing().ownerId) || isAdmin());
+      allow list: if resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid) || isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(brandId) && isValidBrandProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (brandId == request.auth.uid && incoming().ownerId == request.auth.uid && incoming().verified == false && incoming().isDemo == false)
+          || isAdmin()
+        );
+      allow update: if isVerified() && isValidId(brandId) && isValidBrandProfile(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(existing().ownerId)
+            && incoming().verified == existing().verified
+            && incoming().isDemo == existing().isDemo
+            && incoming().diff(existing()).affectedKeys().hasOnly(['brandName', 'description', 'industry', 'website', 'logoUrl', 'location', 'contactName', 'visibility', 'updatedAt']))
+          || (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['brandName', 'description', 'industry', 'website', 'logoUrl', 'location', 'contactName', 'verified', 'visibility', 'updatedAt']))
+        );
+      allow delete: if isValidId(brandId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    // 4. Creator Profiles
+    match /creatorProfiles/{creatorId} {
+      allow get: if isValidId(creatorId) && (existing().visibility == 'public' || isOwner(existing().ownerId) || isAdmin());
+      allow list: if resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid) || isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(creatorId) && isValidCreatorProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (creatorId == request.auth.uid && incoming().ownerId == request.auth.uid && incoming().verified == false && incoming().isDemo == false)
+          || isAdmin()
+        );
+      allow update: if isVerified() && isValidId(creatorId) && isValidCreatorProfile(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(existing().ownerId)
+            && incoming().verified == existing().verified
+            && incoming().isDemo == existing().isDemo
+            && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'username', 'photoUrl', 'bio', 'location', 'niche', 'skills', 'platforms', 'followersCount', 'engagementRate', 'collaborationRate', 'preferences', 'visibility', 'updatedAt']))
+          || (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'username', 'photoUrl', 'bio', 'location', 'niche', 'skills', 'platforms', 'followersCount', 'engagementRate', 'collaborationRate', 'preferences', 'verified', 'visibility', 'updatedAt']))
+        );
+      allow delete: if isValidId(creatorId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    // 5. Social Accounts
+    match /socialAccounts/{accountId} {
+      allow get: if isValidId(accountId) && (existing().visibility == 'public' || isOwner(existing().ownerId) || isAdmin());
+      allow list: if resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid) || isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(accountId) && isValidSocialAccount(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && ((incoming().ownerId == request.auth.uid && incoming().creatorId == request.auth.uid) || isAdmin());
+      allow update: if isVerified() && isValidId(accountId) && isValidSocialAccount(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().creatorId == existing().creatorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(existing().ownerId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['platform', 'handle', 'url', 'followers', 'engagementRate', 'visibility', 'updatedAt']))
+          || isAdmin()
+        );
+      allow delete: if isValidId(accountId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    // 6. Portfolios
+    match /portfolios/{itemId} {
+      allow get: if isValidId(itemId) && (existing().visibility == 'public' || isOwner(existing().ownerId) || isAdmin());
+      allow list: if resource.data.visibility == 'public' || (isSignedIn() && resource.data.ownerId == request.auth.uid) || isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(itemId) && isValidPortfolioItem(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && ((incoming().ownerId == request.auth.uid && incoming().creatorId == request.auth.uid) || isAdmin());
+      allow update: if isVerified() && isValidId(itemId) && isValidPortfolioItem(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().creatorId == existing().creatorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(existing().ownerId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'mediaType', 'mediaUrl', 'category', 'visibility', 'updatedAt']))
+          || isAdmin()
+        );
+      allow delete: if isValidId(itemId) && (isOwner(existing().ownerId) || isAdmin());
+    }
+
+    // 7. Campaigns
+    match /campaigns/{campaignId} {
+      allow get: if isValidId(campaignId) && (existing().visibility == 'public' || isOwner(existing().brandId) || isAdmin());
+      allow list: if resource.data.visibility == 'public' || (isSignedIn() && resource.data.brandId == request.auth.uid) || isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(campaignId) && isValidCampaign(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().brandId == request.auth.uid && incoming().isDemo == false)
+          || isAdmin()
+        );
+      allow update: if isVerified() && isValidId(campaignId) && isValidCampaign(incoming())
+        && incoming().brandId == existing().brandId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(existing().brandId)
+            && !(existing().status in ['completed', 'cancelled'])
+            && incoming().isDemo == existing().isDemo
+            && incoming().diff(existing()).affectedKeys().hasOnly(['brandName', 'brandLogoUrl', 'title', 'description', 'objectives', 'targetAudience', 'niche', 'platforms', 'budget', 'startDate', 'endDate', 'deliverables', 'instructions', 'coverImageUrl', 'status', 'allowApplications', 'progress', 'visibility', 'updatedAt']))
+          || (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['brandName', 'brandLogoUrl', 'title', 'description', 'objectives', 'targetAudience', 'niche', 'platforms', 'budget', 'startDate', 'endDate', 'deliverables', 'instructions', 'coverImageUrl', 'status', 'allowApplications', 'progress', 'visibility', 'updatedAt']))
+        );
+      allow delete: if isValidId(campaignId) && (isOwner(existing().brandId) || isAdmin());
+    }
+
+    // 8. Contacts (Brand saved creators)
+    match /contacts/{contactId} {
+      allow get: if isValidLongId(contactId) && (isOwner(existing().brandId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.brandId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isVerified() && isValidLongId(contactId) && isValidContact(incoming())
+        && incoming().brandId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified() && isValidLongId(contactId) && isValidContact(incoming())
+        && incoming().brandId == existing().brandId
+        && incoming().creatorId == existing().creatorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isOwner(existing().brandId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['creatorName', 'creatorUsername', 'creatorNiche', 'creatorPhotoUrl', 'folder', 'notes', 'updatedAt']))
+          || isAdmin()
+        );
+      allow delete: if isValidLongId(contactId) && (isOwner(existing().brandId) || isAdmin());
+    }
+
+    // 9. Collaboration Requests (Invitations & Applications)
+    match /collaborationRequests/{requestId} {
+      allow get: if isValidLongId(requestId) && isSignedIn() && (
+        existing().brandId == request.auth.uid || existing().creatorId == request.auth.uid || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.brandId == request.auth.uid || resource.data.creatorId == request.auth.uid || isBootstrappedAdmin()
+      );
+      allow create: if isVerified() && isValidLongId(requestId) && isValidCollaborationRequest(incoming())
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().initiatorRole == 'brand' && incoming().brandId == request.auth.uid)
+          || (incoming().initiatorRole == 'creator' && incoming().creatorId == request.auth.uid)
+          || isAdmin()
+        );
+      allow update: if isVerified() && isValidLongId(requestId) && isValidCollaborationRequest(incoming())
+        && incoming().campaignId == existing().campaignId
+        && incoming().brandId == existing().brandId
+        && incoming().creatorId == existing().creatorId
+        && incoming().initiatorRole == existing().initiatorRole
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Recipient accepts or rejects pending request
+          (existing().status == 'pending'
+            && incoming().status in ['accepted', 'rejected']
+            && ((existing().initiatorRole == 'brand' && request.auth.uid == existing().creatorId)
+              || (existing().initiatorRole == 'creator' && request.auth.uid == existing().brandId))
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+          // Action 2: Initiator withdraws pending request
+          || (existing().status == 'pending'
+            && incoming().status == 'withdrawn'
+            && ((existing().initiatorRole == 'brand' && request.auth.uid == existing().brandId)
+              || (existing().initiatorRole == 'creator' && request.auth.uid == existing().creatorId))
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+          // Admin override
+          || (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'proposedBudget', 'message', 'updatedAt']))
+        );
+      allow delete: if isValidLongId(requestId) && isAdmin();
+    }
+
+    // 10. Collaborations (Atomicity-linked to accepted CollaborationRequest)
+    match /collaborations/{collabId} {
+      allow get: if isValidId(collabId) && isSignedIn() && (
+        existing().brandId == request.auth.uid || existing().creatorId == request.auth.uid || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.brandId == request.auth.uid || resource.data.creatorId == request.auth.uid || isBootstrappedAdmin()
+      );
+      allow create: if isVerified() && isValidId(collabId) && isValidCollaboration(incoming())
+        && incoming().status == 'active'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            (incoming().brandId == request.auth.uid || incoming().creatorId == request.auth.uid)
+            && existsAfter(/databases/$(database)/documents/collaborationRequests/$(incoming().requestId))
+            && getAfter(/databases/$(database)/documents/collaborationRequests/$(incoming().requestId)).data.status == 'accepted'
+            && getAfter(/databases/$(database)/documents/collaborationRequests/$(incoming().requestId)).data.brandId == incoming().brandId
+            && getAfter(/databases/$(database)/documents/collaborationRequests/$(incoming().requestId)).data.creatorId == incoming().creatorId
+            && getAfter(/databases/$(database)/documents/collaborationRequests/$(incoming().requestId)).data.campaignId == incoming().campaignId
+          )
+        );
+      allow update: if isVerified() && isValidId(collabId) && isValidCollaboration(incoming())
+        && incoming().requestId == existing().requestId
+        && incoming().campaignId == existing().campaignId
+        && incoming().brandId == existing().brandId
+        && incoming().creatorId == existing().creatorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Brand updates progress or completes/cancels non-terminal collaboration
+          (request.auth.uid == existing().brandId
+            && !(existing().status in ['completed', 'cancelled'])
+            && incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'status', 'deadline', 'deliverablesSummary', 'updatedAt']))
+          // Action 2: Creator updates progress or marks in_review on non-terminal collaboration
+          || (request.auth.uid == existing().creatorId
+            && !(existing().status in ['completed', 'cancelled'])
+            && incoming().status in ['active', 'in_review']
+            && incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'status', 'updatedAt']))
+          // Admin override
+          || (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['progress', 'status', 'deadline', 'deliverablesSummary', 'updatedAt']))
+        );
+      allow delete: if isValidId(collabId) && isAdmin();
+    }
+
+    // 11. Deliverables (Parent collaboration relational check)
+    match /deliverables/{deliverableId} {
+      allow get: if isValidId(deliverableId) && isSignedIn() && (
+        existing().brandId == request.auth.uid || existing().creatorId == request.auth.uid || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.brandId == request.auth.uid || resource.data.creatorId == request.auth.uid || isBootstrappedAdmin()
+      );
+      allow create: if isVerified() && isValidId(deliverableId) && isValidDeliverable(incoming())
+        && incoming().status == 'submitted'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/collaborations/$(incoming().collaborationId))
+        && (
+          isAdmin()
+          || (incoming().creatorId == request.auth.uid
+            && get(/databases/$(database)/documents/collaborations/$(incoming().collaborationId)).data.creatorId == request.auth.uid
+            && get(/databases/$(database)/documents/collaborations/$(incoming().collaborationId)).data.brandId == incoming().brandId)
+        );
+      allow update: if isVerified() && isValidId(deliverableId) && isValidDeliverable(incoming())
+        && incoming().collaborationId == existing().collaborationId
+        && incoming().campaignId == existing().campaignId
+        && incoming().brandId == existing().brandId
+        && incoming().creatorId == existing().creatorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Brand reviews submitted deliverable (locked once approved)
+          (request.auth.uid == existing().brandId
+            && existing().status != 'approved'
+            && incoming().status in ['approved', 'revision_requested']
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'feedback', 'updatedAt']))
+          // Action 2: Creator resubmits after revision request
+          || (request.auth.uid == existing().creatorId
+            && existing().status == 'revision_requested'
+            && incoming().status == 'submitted'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'fileUrl', 'linkUrl', 'status', 'updatedAt']))
+          // Admin override
+          || (isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'feedback', 'updatedAt']))
+        );
+      allow delete: if isValidId(deliverableId) && isAdmin();
+    }
+
+    // 12. Conversations & 13. Messages Subcollection (Master Gate)
+    match /conversations/{conversationId} {
+      allow get: if isValidLongId(conversationId) && isSignedIn() && (
+        existing().brandId == request.auth.uid || existing().creatorId == request.auth.uid || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.brandId == request.auth.uid || resource.data.creatorId == request.auth.uid || isBootstrappedAdmin()
+      );
+      allow create: if isVerified() && isValidLongId(conversationId) && isValidConversation(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (incoming().brandId == request.auth.uid || incoming().creatorId == request.auth.uid || isAdmin());
+      allow update: if isVerified() && isValidLongId(conversationId) && isValidConversation(incoming())
+        && incoming().brandId == existing().brandId
+        && incoming().creatorId == existing().creatorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          ((request.auth.uid == existing().brandId || request.auth.uid == existing().creatorId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'lastSenderId', 'unreadByBrand', 'unreadByCreator', 'campaignId', 'campaignTitle', 'updatedAt']))
+          || isAdmin()
+        );
+      allow delete: if isValidLongId(conversationId) && isAdmin();
+
+      match /messages/{messageId} {
+        allow get: if isValidLongId(conversationId) && isValidId(messageId) && isSignedIn() && (
+          existing().brandId == request.auth.uid || existing().creatorId == request.auth.uid || isAdmin()
+        );
+        allow list: if isSignedIn() && (
+          resource.data.brandId == request.auth.uid || resource.data.creatorId == request.auth.uid || isBootstrappedAdmin()
+        );
+        allow create: if isVerified() && isValidLongId(conversationId) && isValidId(messageId) && isValidMessage(incoming())
+          && incoming().conversationId == conversationId
+          && incoming().senderId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/conversations/$(conversationId))
+          && incoming().brandId == get(/databases/$(database)/documents/conversations/$(conversationId)).data.brandId
+          && incoming().creatorId == get(/databases/$(database)/documents/conversations/$(conversationId)).data.creatorId
+          && (
+            incoming().brandId == request.auth.uid
+            || incoming().creatorId == request.auth.uid
+            || isAdmin()
+          );
+        allow update: if false;
+        allow delete: if isValidLongId(conversationId) && isValidId(messageId) && isAdmin();
+      }
+    }
+
+    // 14. Notifications
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isSignedIn() && (
+        existing().recipientId == request.auth.uid || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.recipientId == request.auth.uid || isBootstrappedAdmin()
+      );
+      allow create: if isVerified() && isValidId(notificationId) && isValidNotification(incoming())
+        && incoming().senderId == request.auth.uid
+        && incoming().read == false
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified() && isValidId(notificationId) && isValidNotification(incoming())
+        && incoming().recipientId == existing().recipientId
+        && incoming().senderId == existing().senderId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (request.auth.uid == existing().recipientId
+            && incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt']))
+          || isAdmin()
+        );
+      allow delete: if isValidId(notificationId) && (isOwner(existing().recipientId) || isAdmin());
+    }
+
+    // 15. Reports
+    match /reports/{reportId} {
+      allow get: if isValidId(reportId) && isSignedIn() && (
+        existing().reporterId == request.auth.uid || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.reporterId == request.auth.uid || isBootstrappedAdmin()
+      );
+      allow create: if isVerified() && isValidId(reportId) && isValidReport(incoming())
+        && incoming().reporterId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().resolutionNote == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified() && isValidId(reportId) && isValidReport(incoming())
+        && incoming().reporterId == existing().reporterId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'resolutionNote', 'updatedAt']);
+      allow delete: if isValidId(reportId) && isAdmin();
+    }
+
+    // 16. Admin Actions (Immutable audit log)
+    match /adminActions/{actionId} {
+      allow get: if isValidId(actionId) && isAdmin();
+      allow list: if isBootstrappedAdmin();
+      allow create: if isVerified() && isValidId(actionId) && isValidAdminAction(incoming())
+        && incoming().adminId == request.auth.uid
+        && incoming().createdAt == request.time
+        && isAdmin();
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

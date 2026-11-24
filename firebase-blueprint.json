@@ -1,0 +1,377 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Private user account record containing PII and role assignment.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "role": { "type": "string", "enum": ["brand", "creator", "admin"] },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "onboardingComplete": { "type": "boolean" },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "role", "status", "onboardingComplete", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authoritative administrator privilege record.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "BrandProfile": {
+      "title": "BrandProfile",
+      "description": "Public brand profile for brand discovery and campaign attribution.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "industry": { "type": "string", "maxLength": 80 },
+        "website": { "type": "string", "maxLength": 300 },
+        "logoUrl": { "type": "string", "maxLength": 500 },
+        "location": { "type": "string", "maxLength": 120 },
+        "contactName": { "type": "string", "maxLength": 120 },
+        "verified": { "type": "boolean" },
+        "visibility": { "type": "string", "enum": ["public", "private"] },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "brandName", "description", "industry", "location", "verified", "visibility", "isDemo", "createdAt", "updatedAt"]
+    },
+    "CreatorProfile": {
+      "title": "CreatorProfile",
+      "description": "Public creator profile displayed in creator discovery and brand workspaces.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "username": { "type": "string", "minLength": 2, "maxLength": 50, "pattern": "^[a-zA-Z0-9_\\.\\-]+$" },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "bio": { "type": "string", "maxLength": 1500 },
+        "location": { "type": "string", "maxLength": 120 },
+        "niche": { "type": "string", "maxLength": 80 },
+        "skills": { "type": "array", "description": "Up to 10 creator skills." },
+        "platforms": { "type": "array", "description": "Up to 8 social media platforms." },
+        "followersCount": { "type": "number" },
+        "engagementRate": { "type": "number" },
+        "collaborationRate": { "type": "number" },
+        "preferences": { "type": "string", "maxLength": 500 },
+        "verified": { "type": "boolean" },
+        "visibility": { "type": "string", "enum": ["public", "private"] },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "fullName", "username", "bio", "location", "niche", "skills", "platforms", "followersCount", "engagementRate", "collaborationRate", "verified", "visibility", "isDemo", "createdAt", "updatedAt"]
+    },
+    "SocialAccount": {
+      "title": "SocialAccount",
+      "description": "Linked social media channel for a creator.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "platform": { "type": "string", "maxLength": 40 },
+        "handle": { "type": "string", "maxLength": 80 },
+        "url": { "type": "string", "maxLength": 400 },
+        "followers": { "type": "number" },
+        "engagementRate": { "type": "number" },
+        "visibility": { "type": "string", "enum": ["public", "private"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "creatorId", "platform", "handle", "url", "followers", "engagementRate", "visibility", "createdAt", "updatedAt"]
+    },
+    "PortfolioItem": {
+      "title": "PortfolioItem",
+      "description": "Showcase media work uploaded or linked by a creator.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 1200 },
+        "mediaType": { "type": "string", "enum": ["image", "video"] },
+        "mediaUrl": { "type": "string", "maxLength": 600 },
+        "category": { "type": "string", "maxLength": 60 },
+        "visibility": { "type": "string", "enum": ["public", "private"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "creatorId", "title", "description", "mediaType", "mediaUrl", "category", "visibility", "createdAt", "updatedAt"]
+    },
+    "Campaign": {
+      "title": "Campaign",
+      "description": "Brand creator marketing campaign brief and lifecycle state.",
+      "type": "object",
+      "properties": {
+        "brandId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "brandLogoUrl": { "type": "string", "maxLength": 500 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "objectives": { "type": "string", "maxLength": 1500 },
+        "targetAudience": { "type": "string", "maxLength": 500 },
+        "niche": { "type": "string", "maxLength": 80 },
+        "platforms": { "type": "array", "description": "Up to 8 target platforms." },
+        "budget": { "type": "number" },
+        "startDate": { "type": "string", "maxLength": 30 },
+        "endDate": { "type": "string", "maxLength": 30 },
+        "deliverables": { "type": "array", "description": "Up to 15 deliverable requirements." },
+        "instructions": { "type": "string", "maxLength": 2500 },
+        "coverImageUrl": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["draft", "open", "active", "completed", "cancelled"] },
+        "allowApplications": { "type": "boolean" },
+        "progress": { "type": "number" },
+        "visibility": { "type": "string", "enum": ["public", "private"] },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brandId", "brandName", "title", "description", "objectives", "targetAudience", "niche", "platforms", "budget", "startDate", "endDate", "deliverables", "instructions", "status", "allowApplications", "progress", "visibility", "isDemo", "createdAt", "updatedAt"]
+    },
+    "Contact": {
+      "title": "Contact",
+      "description": "Brand saved creator contact entry.",
+      "type": "object",
+      "properties": {
+        "brandId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorName": { "type": "string", "maxLength": 120 },
+        "creatorUsername": { "type": "string", "maxLength": 60 },
+        "creatorNiche": { "type": "string", "maxLength": 80 },
+        "creatorPhotoUrl": { "type": "string", "maxLength": 500 },
+        "folder": { "type": "string", "maxLength": 60 },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brandId", "creatorId", "creatorName", "creatorUsername", "creatorNiche", "folder", "notes", "createdAt", "updatedAt"]
+    },
+    "CollaborationRequest": {
+      "title": "CollaborationRequest",
+      "description": "Invitation sent by a brand or application submitted by a creator.",
+      "type": "object",
+      "properties": {
+        "campaignId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignTitle": { "type": "string", "maxLength": 160 },
+        "brandId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandName": { "type": "string", "maxLength": 120 },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorName": { "type": "string", "maxLength": 120 },
+        "initiatorRole": { "type": "string", "enum": ["brand", "creator"] },
+        "proposedBudget": { "type": "number" },
+        "message": { "type": "string", "maxLength": 1500 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "withdrawn"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["campaignId", "campaignTitle", "brandId", "brandName", "creatorId", "creatorName", "initiatorRole", "proposedBudget", "message", "status", "createdAt", "updatedAt"]
+    },
+    "Collaboration": {
+      "title": "Collaboration",
+      "description": "Active or completed brand-creator collaboration workspace.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "maxLength": 200, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignTitle": { "type": "string", "maxLength": 160 },
+        "brandId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandName": { "type": "string", "maxLength": 120 },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorName": { "type": "string", "maxLength": 120 },
+        "budget": { "type": "number" },
+        "deadline": { "type": "string", "maxLength": 30 },
+        "deliverablesSummary": { "type": "string", "maxLength": 1000 },
+        "progress": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "in_review", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requestId", "campaignId", "campaignTitle", "brandId", "brandName", "creatorId", "creatorName", "budget", "deadline", "deliverablesSummary", "progress", "status", "createdAt", "updatedAt"]
+    },
+    "Deliverable": {
+      "title": "Deliverable",
+      "description": "Content deliverable submitted by a creator and reviewed by a brand.",
+      "type": "object",
+      "properties": {
+        "collaborationId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "campaignId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "fileUrl": { "type": "string", "maxLength": 600 },
+        "linkUrl": { "type": "string", "maxLength": 600 },
+        "status": { "type": "string", "enum": ["submitted", "approved", "revision_requested"] },
+        "feedback": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["collaborationId", "campaignId", "brandId", "creatorId", "title", "description", "status", "feedback", "createdAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "One-to-one messaging thread between a brand and creator.",
+      "type": "object",
+      "properties": {
+        "brandId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandName": { "type": "string", "maxLength": 120 },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorName": { "type": "string", "maxLength": 120 },
+        "campaignId": { "type": "string", "maxLength": 128 },
+        "campaignTitle": { "type": "string", "maxLength": 160 },
+        "lastMessage": { "type": "string", "maxLength": 500 },
+        "lastSenderId": { "type": "string", "maxLength": 128 },
+        "unreadByBrand": { "type": "number" },
+        "unreadByCreator": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["brandId", "brandName", "creatorId", "creatorName", "lastMessage", "lastSenderId", "unreadByBrand", "unreadByCreator", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual message inside a conversation subcollection.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "maxLength": 200, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "brandId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "creatorId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "maxLength": 120 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "brandId", "creatorId", "senderId", "senderName", "body", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notification delivered to a specific recipient.",
+      "type": "object",
+      "properties": {
+        "recipientId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["invitation", "invitation_accepted", "invitation_rejected", "message", "campaign_published", "campaign_updated", "deliverable_submitted", "deadline", "announcement"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "body": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "linkTab": { "type": "string", "maxLength": 60 },
+        "referenceId": { "type": "string", "maxLength": 128 },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientId", "senderId", "type", "title", "body", "read", "createdAt", "updatedAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "Content or user moderation report submitted for administrator review.",
+      "type": "object",
+      "properties": {
+        "reporterId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "targetType": { "type": "string", "enum": ["user", "campaign"] },
+        "targetId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "targetName": { "type": "string", "maxLength": 160 },
+        "reason": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "minLength": 5, "maxLength": 1500 },
+        "status": { "type": "string", "enum": ["pending", "reviewed", "resolved", "dismissed"] },
+        "resolutionNote": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reporterId", "targetType", "targetId", "targetName", "reason", "description", "status", "resolutionNote", "createdAt", "updatedAt"]
+    },
+    "AdminAction": {
+      "title": "AdminAction",
+      "description": "Immutable audit log of administrative moderation actions.",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "adminEmail": { "type": "string", "format": "email", "maxLength": 254 },
+        "actionType": { "type": "string", "maxLength": 80 },
+        "targetType": { "type": "string", "enum": ["user", "campaign", "report", "system"] },
+        "targetId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "details": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["adminId", "adminEmail", "actionType", "targetType", "targetId", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Private user account records with PII isolated to owner and admin."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted administrator lookup table."
+    },
+    "/brandProfiles/{brandId}": {
+      "schema": { "$ref": "#/entities/BrandProfile" },
+      "description": "Public brand profiles."
+    },
+    "/creatorProfiles/{creatorId}": {
+      "schema": { "$ref": "#/entities/CreatorProfile" },
+      "description": "Public creator profiles."
+    },
+    "/socialAccounts/{accountId}": {
+      "schema": { "$ref": "#/entities/SocialAccount" },
+      "description": "Creator social media links and audience metrics."
+    },
+    "/portfolios/{itemId}": {
+      "schema": { "$ref": "#/entities/PortfolioItem" },
+      "description": "Creator portfolio gallery items."
+    },
+    "/campaigns/{campaignId}": {
+      "schema": { "$ref": "#/entities/Campaign" },
+      "description": "Brand marketing campaigns."
+    },
+    "/contacts/{contactId}": {
+      "schema": { "$ref": "#/entities/Contact" },
+      "description": "Brand saved creator contacts."
+    },
+    "/collaborationRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/CollaborationRequest" },
+      "description": "Brand invitations and creator applications."
+    },
+    "/collaborations/{collabId}": {
+      "schema": { "$ref": "#/entities/Collaboration" },
+      "description": "Active and completed collaborations."
+    },
+    "/deliverables/{deliverableId}": {
+      "schema": { "$ref": "#/entities/Deliverable" },
+      "description": "Creator deliverables and brand review statuses."
+    },
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Authorized one-to-one conversations."
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages belonging to a parent conversation."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notification center records."
+    },
+    "/reports/{reportId}": {
+      "schema": { "$ref": "#/entities/Report" },
+      "description": "Platform moderation reports."
+    },
+    "/adminActions/{actionId}": {
+      "schema": { "$ref": "#/entities/AdminAction" },
+      "description": "Immutable admin action audit trail."
+    }
+  }
+}
